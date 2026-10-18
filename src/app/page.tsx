@@ -3,8 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import { api, type Contact, type DashboardSummary, type Lead, type LeadStatus } from "@/lib/api-client";
 type Page = "Overview" | "Leads" | "Contacts" | "Pipeline" | "Conversations" | "Payments" | "Calendar" | "Reports" | "Settings";
 const groups:{name:string;items:{label:Page;icon:string}[]}[]=[{name:"WORKSPACE",items:[{label:"Overview",icon:"◫"},{label:"Leads",icon:"✳"},{label:"Contacts",icon:"◎"},{label:"Pipeline",icon:"▥"}]},{name:"ENGAGE",items:[{label:"Conversations",icon:"▤"},{label:"Payments",icon:"＄"},{label:"Calendar",icon:"▦"}]},{name:"MANAGE",items:[{label:"Reports",icon:"⌁"},{label:"Settings",icon:"⚙"}]}];
-const countdown=(deadline:string,now:number)=>{const n=Math.max(0,Math.ceil((new Date(deadline).getTime()-now)/1000));return `${Math.floor(n/60).toString().padStart(2,"0")}:${(n%60).toString().padStart(2,"0")}`};
-const money=(v:number)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:0}).format(v);
+const countdown=(deadline:string|null,now:number)=>{if(!deadline)return "—";const n=Math.max(0,Math.ceil((new Date(deadline).getTime()-now)/1000));return `${Math.floor(n/60).toString().padStart(2,"0")}:${(n%60).toString().padStart(2,"0")}`};
+const money=(v:number|null)=>v==null?"—":new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",maximumFractionDigits:0}).format(v);
 function Avatar({text,color="purple"}:{text:string;color?:string}){return <span className={`avatar ${color}`}>{text}</span>}
 function Badge({status}:{status:string}){const labels:Record<string,string>={new:"New",assigned:"Awaiting reply",acknowledged:"Acknowledged",escalated:"Escalated"};return <span className={`badge ${status}`}>{labels[status]||status}</span>}
 function Button(p:React.ButtonHTMLAttributes<HTMLButtonElement>){return <button {...p} className={`button ${p.className||""}`}/>}

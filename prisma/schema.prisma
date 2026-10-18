@@ -1,0 +1,581 @@
+// Prisma Schema for Unified Business Management Platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -------------------------------------------------------------
+// WORKSPACES & USERS
+// -------------------------------------------------------------
+
+model Workspace {
+  id                String             @id @default(cuid())
+  workspaceId       String             @map("workspace_id") // Meets requirement of workspace_id on every table
+  name              String
+  slug              String             @unique
+  settings          Json?              // Escalation timeouts, ack window in seconds (default: 300)
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  users             User[]
+  permissions       Permission[]
+  contacts          Contact[]
+  companies         Company[]
+  pipelines         Pipeline[]
+  stages            Stage[]
+  customFields      CustomField[]
+  opportunities     Opportunity[]
+  leads             Lead[]
+  activities        Activity[]
+  conversations     Conversation[]
+  messages          Message[]
+  payments          Payment[]
+  appointments      Appointment[]
+  integrations      Integration[]
+  integrationEvents IntegrationEvent[]
+  auditLogs         AuditLog[]
+  savedLists        SavedList[]
+  sessions          Session[]
+
+  @@map("workspaces")
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  USER
+}
+
+enum AvailabilityStatus {
+  AVAILABLE
+  BUSY
+  ON_LEAVE
+  OFFLINE
+}
+
+model User {
+  id                  String             @id @default(cuid())
+  workspaceId         String             @map("workspace_id")
+  email               String             @unique
+  passwordHash        String             @map("password_hash")
+  name                String
+  role                UserRole           @default(USER)
+  availabilityStatus  AvailabilityStatus @default(AVAILABLE) @map("availability_status")
+  maxOpenLeads        Int                @default(10) @map("max_open_leads")
+  telegramDestination String?            @map("telegram_destination") // Per-user routing (I4.3)
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+
+  workspace           Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  permissions         Permission[]
+  assignedLeads       Lead[]             @relation("LeadAssignee")
+  hostedAppointments  Appointment[]      @relation("UserAppointments")
+  conversations       Conversation[]     @relation("UserConversations")
+  sessions            Session[]
+  savedLists          SavedList[]
+
+  @@index([workspaceId])
+  @@index([workspaceId, availabilityStatus])
+  @@map("users")
+}
+
+model Session {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  userId      String    @map("user_id")
+  token       String    @unique
+  expiresAt   DateTime  @map("expires_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([workspaceId, userId])
+  @@map("sessions")
+}
+
+// Permissions stored as rows, not just hardcoded role names (Rule 2)
+model Permission {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  userId      String    @map("user_id")
+  action      String    // e.g. "crm.view", "crm.create", "crm.edit", "crm.delete", "crm.export", "crm.opportunity_value", "assignment.manage", "integrations.manage", "audit.view"
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId, action])
+  @@index([workspaceId, userId])
+  @@map("permissions")
+}
+
+// -------------------------------------------------------------
+// CRM CORE
+// -------------------------------------------------------------
+
+model Company {
+  id            String        @id @default(cuid())
+  workspaceId   String        @map("workspace_id")
+  name          String
+  domain        String?
+  industry      String?
+  phone         String?
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contacts      Contact[]
+  opportunities Opportunity[]
+
+  @@index([workspaceId])
+  @@map("companies")
+}
+
+model Contact {
+  id            String        @id @default(cuid())
+  workspaceId   String        @map("workspace_id")
+  companyId     String?       @map("company_id")
+  firstName     String        @map("first_name")
+  lastName      String        @map("last_name")
+  email         String?
+  phone         String?       // Normalized phone for Twilio matching
+  optOut        Boolean       @default(false) @map("opt_out") // Opt-out block (I1.9)
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  company       Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  opportunities Opportunity[]
+  leads         Lead[]
+  conversations Conversation[]
+  activities    Activity[]
+  payments      Payment[]
+  appointments  Appointment[]
+
+  @@index([workspaceId])
+  @@index([workspaceId, phone])
+  @@index([workspaceId, email])
+  @@map("contacts")
+}
+
+model Pipeline {
+  id           String        @id @default(cuid())
+  workspaceId  String        @map("workspace_id")
+  name         String
+  isDefault    Boolean       @default(false) @map("is_default")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  stages       Stage[]
+  customFields CustomField[]
+
+  @@index([workspaceId])
+  @@map("pipelines")
+}
+
+model Stage {
+  id             String        @id @default(cuid())
+  workspaceId    String        @map("workspace_id")
+  pipelineId     String        @map("pipeline_id")
+  name           String
+  order          Int
+  isWon          Boolean       @default(false) @map("is_won")
+  isLost         Boolean       @default(false) @map("is_lost")
+  requiredFields Json?         @map("required_fields") // String[] of field keys required to enter stage (F2.4)
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  workspace      Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  pipeline       Pipeline      @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  opportunities  Opportunity[]
+
+  @@index([workspaceId, pipelineId])
+  @@map("stages")
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  DATE
+  DROPDOWN
+  CHECKBOX
+}
+
+model CustomField {
+  id          String          @id @default(cuid())
+  workspaceId String          @map("workspace_id")
+  pipelineId  String?         @map("pipeline_id") // Scoped per pipeline (F2.2, F2.3)
+  name        String
+  key         String          // Unique programmatic key
+  type        CustomFieldType
+  options     Json?           // Array of options for dropdown
+  isRequired  Boolean         @default(false) @map("is_required")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  pipeline    Pipeline?       @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, key, pipelineId])
+  @@index([workspaceId])
+  @@map("custom_fields")
+}
+
+model Opportunity {
+  id           String        @id @default(cuid())
+  workspaceId  String        @map("workspace_id")
+  title        String
+  value        Float         @default(0.0) // Field-level masked if no crm.opportunity_value permission (F1.4)
+  currency     String        @default("USD")
+  stageId      String        @map("stage_id")
+  contactId    String?       @map("contact_id")
+  companyId    String?       @map("company_id")
+  ownerId      String?       @map("owner_id")
+  customFields Json?         @map("custom_fields") // Record-specific values for custom fields
+  version      Int           @default(1) // Optimistic concurrency (Q4)
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  stage        Stage         @relation(fields: [stageId], references: [id], onDelete: Restrict)
+  contact      Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  company      Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  activities   Activity[]
+  payments     Payment[]
+  appointments Appointment[]
+
+  @@index([workspaceId])
+  @@index([workspaceId, stageId])
+  @@map("opportunities")
+}
+
+// -------------------------------------------------------------
+// LEAD ENGINE
+// -------------------------------------------------------------
+
+enum LeadStatus {
+  NEW
+  ASSIGNED
+  ACKNOWLEDGED
+  ESCALATED
+  RESOLVED
+}
+
+model Lead {
+  id               String      @id @default(cuid())
+  workspaceId      String      @map("workspace_id")
+  title            String
+  contactId        String?     @map("contact_id")
+  source           String      // "web_form", "messaging", "manual" (F3.1)
+  status           LeadStatus  @default(NEW)
+  ownerId          String?     @map("owner_id") // Current accountable assignee
+  assignedAt       DateTime?   @map("assigned_at")
+  ackDeadline      DateTime?   @map("ack_deadline") // Visible remaining time (F3.4)
+  acknowledgedAt   DateTime?   @map("acknowledged_at")
+  escalationLevel  Int         @default(0) @map("escalation_level") // Escalation level 0 -> 1 -> 2 -> 3
+  lastEscalatedAt  DateTime?   @map("last_escalated_at")
+  customFields     Json?       @map("custom_fields")
+  version          Int         @default(1) // Optimistic concurrency
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  workspace        Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contact          Contact?    @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  owner            User?       @relation("LeadAssignee", fields: [ownerId], references: [id], onDelete: SetNull)
+  activities       Activity[]
+
+  @@index([workspaceId])
+  @@index([workspaceId, status])
+  @@index([workspaceId, ownerId])
+  @@index([workspaceId, ackDeadline])
+  @@map("leads")
+}
+
+// -------------------------------------------------------------
+// ACTIVITIES & AUDIT LOG (APPEND ONLY)
+// -------------------------------------------------------------
+
+enum ActivityType {
+  NOTE
+  CALL
+  EMAIL
+  STAGE_CHANGE
+  ASSIGNMENT
+  ACKNOWLEDGEMENT
+  ESCALATION
+  REASSIGNMENT
+  FIELD_EDIT
+  MESSAGE
+  PAYMENT
+  APPOINTMENT
+}
+
+model Activity {
+  id            String        @id @default(cuid())
+  workspaceId   String        @map("workspace_id")
+  contactId     String?       @map("contact_id")
+  opportunityId String?       @map("opportunity_id")
+  leadId        String?       @map("lead_id")
+  actorId       String?       @map("actor_id") // userId or "system"
+  type          ActivityType
+  description   String
+  metadata      Json?
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contact       Contact?      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  opportunity   Opportunity?  @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  lead          Lead?         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([workspaceId, contactId])
+  @@index([workspaceId, opportunityId])
+  @@index([workspaceId, leadId])
+  @@map("activities")
+}
+
+// Append-only audit helper with NO update or delete endpoint (F4.1, F4.3)
+model AuditLog {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  actorId     String?   @map("actor_id") // user ID or null for system
+  eventType   String    @map("event_type") // ASSIGNMENT, ACKNOWLEDGEMENT, ESCALATION, REASSIGNMENT, ROLE_CHANGE, PERMISSION_CHANGE, FIELD_CONFIG, PIPELINE_CONFIG, INTEGRATION_CONFIG, DELETION
+  targetType  String    @map("target_type") // lead, user, opportunity, pipeline, stage, integration
+  targetId    String?   @map("target_id")
+  beforeValue Json?     @map("before_value")
+  afterValue  Json?     @map("after_value")
+  ipAddress   String?   @map("ip_address")
+  userAgent   String?   @map("user_agent")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([workspaceId, eventType])
+  @@index([workspaceId, actorId])
+  @@index([workspaceId, createdAt])
+  @@map("audit_log")
+}
+
+// -------------------------------------------------------------
+// MESSAGING & CONVERSATIONS (TWILIO WHATSAPP / SMS)
+// -------------------------------------------------------------
+
+model Conversation {
+  id             String        @id @default(cuid())
+  workspaceId    String        @map("workspace_id")
+  contactId      String        @map("contact_id")
+  assignedUserId String?       @map("assigned_user_id") // Employee assigned to conversation (I1.6)
+  channel        String        @default("whatsapp") // "whatsapp" or "sms"
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  workspace      Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contact        Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  assignedUser   User?         @relation("UserConversations", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  messages       Message[]
+
+  @@index([workspaceId])
+  @@index([workspaceId, contactId])
+  @@map("conversations")
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+}
+
+model Message {
+  id                String           @id @default(cuid())
+  workspaceId       String           @map("workspace_id")
+  conversationId    String           @map("conversation_id")
+  direction         MessageDirection
+  body              String
+  providerMessageId String?          @unique @map("provider_message_id") // Idempotency on MessageSid (I1.8, Rule 5)
+  status            MessageStatus    @default(QUEUED)
+  failureReason     String?          @map("failure_reason") // Retain failure reason (I1.7)
+  retryCount        Int              @default(0) @map("retry_count")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  workspace         Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversation      Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([workspaceId, conversationId])
+  @@map("messages")
+}
+
+// -------------------------------------------------------------
+// PAYMENTS (SAFEPAY)
+// -------------------------------------------------------------
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  EXPIRED
+  FAILED
+  REFUNDED
+}
+
+model Payment {
+  id                        String        @id @default(cuid())
+  workspaceId               String        @map("workspace_id")
+  opportunityId             String?       @map("opportunity_id")
+  contactId                 String?       @map("contact_id")
+  requestedByUserId         String?       @map("requested_by_user_id")
+  amount                    Float
+  currency                  String        @default("usd")
+  status                    PaymentStatus @default(PENDING)
+  providerCheckoutSessionId String?       @unique @map("provider_checkout_session_id") // SafePay session id (I2.1)
+  providerPaymentIntentId   String?       @map("provider_payment_intent_id")
+  providerEventId           String?       @unique @map("provider_event_id") // Idempotency on event.id (I2.4, Rule 5)
+  checkoutUrl               String?       @map("checkout_url")
+  metadata                  Json?
+  createdAt                 DateTime      @default(now()) @map("created_at")
+  updatedAt                 DateTime      @updatedAt @map("updated_at")
+
+  workspace                 Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  opportunity               Opportunity?  @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  contact                   Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([workspaceId, status])
+  @@map("payments")
+}
+
+// -------------------------------------------------------------
+// APPOINTMENTS (GOOGLE CALENDAR)
+// -------------------------------------------------------------
+
+enum AppointmentStatus {
+  SCHEDULED
+  RESCHEDULED
+  CANCELLED
+}
+
+model Appointment {
+  id            String            @id @default(cuid())
+  workspaceId   String            @map("workspace_id")
+  contactId     String?           @map("contact_id")
+  opportunityId String?           @map("opportunity_id")
+  hostUserId    String            @map("host_user_id")
+  title         String
+  description   String?
+  startTime     DateTime          @map("start_time") // Stored in UTC (I3.5)
+  endTime       DateTime          @map("end_time")   // Stored in UTC (I3.5)
+  timeZone      String            @map("time_zone")  // IANA time zone (e.g. "America/New_York") (I3.5)
+  googleEventId String?           @unique @map("google_event_id")
+  status        AppointmentStatus @default(SCHEDULED)
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  workspace     Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contact       Contact?          @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  opportunity   Opportunity?      @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  hostUser      User              @relation("UserAppointments", fields: [hostUserId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([workspaceId, hostUserId])
+  @@map("appointments")
+}
+
+// -------------------------------------------------------------
+// INTEGRATIONS & INTEGRATION EVENTS
+// -------------------------------------------------------------
+
+enum IntegrationProvider {
+  TWILIO
+  SAFEPAY
+  GOOGLE_CALENDAR
+  TELEGRAM
+}
+
+enum IntegrationStatus {
+  DISCONNECTED
+  CONNECTED
+  ERROR
+}
+
+model Integration {
+  id                   String              @id @default(cuid())
+  workspaceId          String              @map("workspace_id")
+  provider             IntegrationProvider
+  status               IntegrationStatus   @default(DISCONNECTED)
+  credentialsEncrypted String?             @map("credentials_encrypted") // Encrypted server-side (Rule 8, I5.3)
+  config               Json?               // Public non-secret configs
+  lastWorkedAt         DateTime?           @map("last_worked_at")
+  lastError            String?             @map("last_error")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+
+  workspace            Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, provider])
+  @@index([workspaceId])
+  @@map("integrations")
+}
+
+enum IntegrationEventResult {
+  SUCCESS
+  FAILED
+  REJECTED
+}
+
+model IntegrationEvent {
+  id              String                 @id @default(cuid())
+  workspaceId     String                 @map("workspace_id")
+  provider        IntegrationProvider
+  eventType       String                 @map("event_type") // INBOUND_WEBHOOK, OUTBOUND_SEND, PAYMENT_WEBHOOK, CALENDAR_SYNC, etc.
+  providerEventId String?                @unique @map("provider_event_id") // Idempotency check
+  result          IntegrationEventResult
+  reference       String?                // Reference ID (e.g. lead ID, payment ID, message ID)
+  requestPayload  Json?                  @map("request_payload")
+  responsePayload Json?                  @map("response_payload")
+  errorMessage    String?                @map("error_message")
+  createdAt       DateTime               @default(now()) @map("created_at")
+
+  workspace       Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([workspaceId, provider])
+  @@index([workspaceId, createdAt])
+  @@map("integration_events")
+}
+
+// -------------------------------------------------------------
+// SAVED LISTS (FILTERS)
+// -------------------------------------------------------------
+
+model SavedList {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  userId      String    @map("user_id")
+  name        String
+  entityType  String    @map("entity_type") // "contact", "opportunity", "lead"
+  criteria    Json      // Supports at least 3 criteria: field, tag, stage, owner, date (F2.6, Q9)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, userId])
+  @@map("saved_lists")
+}
+

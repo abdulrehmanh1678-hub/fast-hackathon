@@ -1,6 +1,5 @@
 import { encryptSecret, decryptSecret, maskSecret } from '../src/server/crypto/encryption';
 import { handleInboundTwilioMessage } from '../src/server/integrations/twilio';
-import { handleStripeWebhookEvent } from '../src/server/integrations/stripe';
 import { prisma } from '../src/server/db';
 import { createScopedDAL } from '../src/server/dal';
 
@@ -60,7 +59,7 @@ async function runConcurrencyTests() {
   const dal = createScopedDAL(workspace.id);
 
   // 3. Testing Duplicate Webhooks & Idempotency (Rule 5, I1.8, I2.4)
-  console.log('\n3. Testing Duplicate Webhook Idempotency (Twilio & Stripe)...');
+  console.log('\n3. Testing Duplicate Webhook Idempotency (Twilio)...');
   const messageSid = `SM_test_${Date.now()}`;
   const fromNumber = '+14155559999';
 
@@ -87,26 +86,6 @@ async function runConcurrencyTests() {
   }
   console.log('   ✓ Twilio duplicate webhook detected and rejected safely without creating duplicate message');
 
-  // Test Stripe Idempotency
-  const stripeEventId = `evt_test_${Date.now()}`;
-  const mockStripeEvent: any = {
-    id: stripeEventId,
-    type: 'checkout.session.completed',
-    data: {
-      object: {
-        id: `cs_test_${Date.now()}`,
-        payment_intent: 'pi_test_123',
-      },
-    },
-  };
-
-  const stripeRes1 = await handleStripeWebhookEvent(workspace.id, mockStripeEvent);
-  const stripeRes2 = await handleStripeWebhookEvent(workspace.id, mockStripeEvent);
-
-  if (!stripeRes2.duplicate) {
-    throw new Error('Stripe idempotency test failed: Duplicate event was not detected');
-  }
-  console.log('   ✓ Stripe duplicate event.id detected and handled idempotently');
 
   // 4. Testing Optimistic Concurrency on Opportunity Edits (Q4)
   console.log('\n4. Testing Optimistic Concurrency Protection (Q4)...');

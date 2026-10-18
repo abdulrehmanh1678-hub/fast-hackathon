@@ -173,6 +173,7 @@ export function validateCsrf(req: NextRequest): void {
   if (
     pathname.startsWith('/api/integrations/twilio/webhook') ||
     pathname.startsWith('/api/integrations/twilio/status') ||
+    pathname.startsWith('/api/integrations/whatsapp/webhook') ||
     pathname.startsWith('/api/integrations/safepay/webhook') ||
     pathname.startsWith('/api/leads/public')
   ) {

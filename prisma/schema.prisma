@@ -501,6 +501,7 @@ model Appointment {
 
 enum IntegrationProvider {
   TWILIO
+  WHATSAPP_CLOUD
   SAFEPAY
   GOOGLE_CALENDAR
   TELEGRAM

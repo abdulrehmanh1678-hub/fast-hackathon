@@ -1,14 +1,20 @@
 ﻿export type LeadStatus = "new" | "assigned" | "acknowledged" | "escalated" | "resolved";
 export type Lead = { id:string; name:string; company:string; source:string; owner:string; status:LeadStatus; createdAt:string; ackDeadline:string|null; initials:string };
 export type Contact = { id:string; name:string; company:string; email:string; stage:string; owner:string; value:number|null };
+export type WhatsAppMessage = { id:string; direction:'INBOUND'|'OUTBOUND'; body:string; status:string; createdAt:string };
+export type WhatsAppConversation = { id:string; contactId:string; channel:string; contact:{firstName:string;lastName:string;phone:string|null}; assignedUser:{name:string}|null; messages:WhatsAppMessage[] };
 export type DashboardSummary = { activeLeads:number|null; atRisk:number|null; conversion:number|null; revenue:number|null };
 export type WorkspaceSession = { user:{id:string;name:string;email:string;role:string;permissions:string[];availabilityStatus:string}; workspace:{id:string;name:string;slug:string} };
+export type PaymentRow = { id:string; amount:number; currency:string; status:'PENDING'|'PAID'|'EXPIRED'|'FAILED'|'REFUNDED'; checkoutUrl:string|null; createdAt:string; contact:{firstName:string;lastName:string}|null; opportunity:{title:string}|null };
+export type OpportunityOption = { id:string; title:string; value:number|null; contact:{firstName:string;lastName:string}|null };
 export class ApiError extends Error { constructor(message:string,public status:number,public fields?:Record<string,string[]>){super(message)} }
 export interface ApiClient {
  getDashboard():Promise<DashboardSummary>; listLeads():Promise<Lead[]>; listContacts(query?:string):Promise<Contact[]>;
  acknowledgeLead(id:string):Promise<Lead>; getMe():Promise<WorkspaceSession|null>; login(email:string,password:string):Promise<WorkspaceSession>;
  signup(data:{name:string;email:string;password:string;companyName:string;workspaceSlug:string}):Promise<WorkspaceSession>; logout():Promise<void>;
  createLead(title:string):Promise<Lead>; createContact(data:{firstName:string;lastName:string;email?:string}):Promise<void>; setAvailability(status:string):Promise<void>;
+ getConversations():Promise<WhatsAppConversation[]>; sendWhatsAppMessage(contactId:string,body:string):Promise<WhatsAppMessage>;
+ listPayments():Promise<PaymentRow[]>; listOpportunities():Promise<OpportunityOption[]>; createPaymentLink(data:{opportunityId:string;amount:number;currency:string;description?:string}):Promise<PaymentRow>;
 }
 const wait=()=>new Promise(resolve=>setTimeout(resolve,150));
 const mockLeads:Lead[]=[
@@ -29,7 +35,8 @@ export const mockApi:ApiClient={
  async getDashboard(){await wait();return {activeLeads:248,atRisk:12,conversion:24.8,revenue:48240}},
  async listLeads(){await wait();return mockLeads.map(x=>({...x}))},async listContacts(){await wait();return mockContacts.map(x=>({...x}))},
  async acknowledgeLead(id){await wait();const x=mockLeads.find(y=>y.id===id);if(!x)throw new ApiError("Lead not found. Refresh and try again.",404);x.status="acknowledged";return {...x}},
- async getMe(){return null},async login(){throw new ApiError("Mock sign in is not configured.",501)},async signup(){throw new ApiError("Mock sign up is not configured.",501)},async logout(){},async createLead(title){const x:Lead={id:`LD-${Date.now()}`,name:title,company:"New contact",source:"Manual",owner:"You",status:"new",createdAt:"Just now",ackDeadline:new Date(Date.now()+300000).toISOString(),initials:title.split(" ").map(y=>y[0]).join("").slice(0,2)};mockLeads.unshift(x);return x},async createContact(){},async setAvailability(){}
+ async getMe(){return null},async login(){throw new ApiError("Mock sign in is not configured.",501)},async signup(){throw new ApiError("Mock sign up is not configured.",501)},async logout(){},async createLead(title){const x:Lead={id:`LD-${Date.now()}`,name:title,company:"New contact",source:"Manual",owner:"You",status:"new",createdAt:"Just now",ackDeadline:new Date(Date.now()+300000).toISOString(),initials:title.split(" ").map(y=>y[0]).join("").slice(0,2)};mockLeads.unshift(x);return x},async createContact(){},async setAvailability(){},async getConversations(){return []},async sendWhatsAppMessage(){throw new ApiError("Mock WhatsApp sending is not configured.",501)},
+ async listPayments(){return []},async listOpportunities(){return []},async createPaymentLink(){throw new ApiError("Mock payments are not configured.",501)}
 };
 async function request<T>(path:string,init:RequestInit={}):Promise<T>{
  const response=await fetch(path,{...init,credentials:"same-origin",headers:{"Content-Type":"application/json",...init.headers}});
@@ -52,6 +59,11 @@ export const httpApi:ApiClient={
  async createLead(title){const r=await request<{lead:any}>('/api/leads',{method:"POST",body:JSON.stringify({title,source:"manual"})});return normalizeLead(r.lead)},
  async createContact(data){const parts=data.firstName.trim().split(/\s+/);const firstName=parts.shift()||"";const lastName=[...parts,data.lastName].filter(Boolean).join(" ");await request('/api/contacts',{method:"POST",body:JSON.stringify({firstName,lastName,email:data.email||undefined})})},
  async setAvailability(status){const me=await this.getMe();if(!me)throw new ApiError("Sign in to update availability.",401);await request(`/api/users/${me.user.id}`,{method:"PATCH",body:JSON.stringify({availabilityStatus:status.toUpperCase().replaceAll(" ","_")})})}
+ ,async getConversations(){const r=await request<{conversations:WhatsAppConversation[]}>('/api/conversations');return(r.conversations||[]).map((conversation)=>({...conversation,messages:[...conversation.messages].reverse()}))}
+ ,async listPayments(){const r=await request<{payments:PaymentRow[]}>('/api/payments');return r.payments||[]}
+ ,async listOpportunities(){const r=await request<{opportunities:any[]}>('/api/opportunities');return(r.opportunities||[]).map((o)=>({id:o.id,title:o.title,value:o.value??null,contact:o.contact?{firstName:o.contact.firstName,lastName:o.contact.lastName}:null}))}
+ ,async createPaymentLink(data){const r=await request<{payment:PaymentRow}>('/api/integrations/safepay/checkout',{method:'POST',body:JSON.stringify(data)});return r.payment}
+ ,async sendWhatsAppMessage(contactId,body){const r=await request<{message:WhatsAppMessage}>('/api/integrations/whatsapp/send',{method:'POST',body:JSON.stringify({contactId,body})});return r.message}
 };
 // Use the contract-backed same-origin API in the running app. mockApi remains available for isolated UI work.
 export const api:ApiClient=httpApi;

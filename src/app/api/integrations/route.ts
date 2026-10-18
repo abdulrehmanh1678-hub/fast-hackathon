@@ -20,6 +20,11 @@ export async function GET(req: NextRequest) {
         limits: 'Twilio Sandbox only reaches phones that have sent the join phrase to the sandbox number.',
         testModeNotice: 'Using WhatsApp sandbox mode. Messages to unjoined numbers are rejected by Twilio.',
       },
+      WHATSAPP_CLOUD: {
+        name: 'WhatsApp Cloud API',
+        limits: 'Free-form replies are available within the customer service window; approved templates are required to initiate conversations outside it.',
+        testModeNotice: 'Messages are sent through Meta WhatsApp Cloud API using the configured business phone number.',
+      },
       SAFEPAY: {
         name: 'SafePay Payments',
         limits: 'Checkout uses SafePay hosted payments. Configure separate public API, private API, and webhook signing keys.',

@@ -1,4 +1,4 @@
-﻿import crypto from 'crypto';
+import crypto from 'crypto';
 import { prisma } from '@/server/db';
 import { AppError } from '@/shared/errors';
 import { decryptSecret } from '@/server/crypto/encryption';
@@ -37,7 +37,7 @@ export async function createSafepayPaymentSession(params:{workspaceId:string;opp
  const code=currency.toUpperCase();if(!['PKR','USD'].includes(code))throw new AppError('UNSUPPORTED_CURRENCY','SafePay checkout currently supports PKR and USD for this integration.',400);
  const payment=await prisma.payment.create({data:{workspaceId,opportunityId:opportunity.id,contactId:opportunity.contactId,requestedByUserId,amount,currency:code.toLowerCase(),status:'PENDING',metadata:{title:opportunity.title,description,provider:'SAFEPAY'}}});
  try{
-  const trackerResponse=await safepayRequest<any>(config,'/order/payments/v3/',{merchant_api_key:config.publicKey,intent:'CYBERSOURCE',mode:'payment',entry_mode:'raw',currency:code,amount:Math.round(amount*100),include_fees:false,metadata:{payment_id:payment.id,workspace_id:workspaceId,opportunity_id:opportunity.id}});
+  const trackerResponse=await safepayRequest<any>(config,'/order/payments/v3/',{merchant_api_key:config.publicKey,intent:'CYBERSOURCE',mode:'payment',entry_mode:'raw',currency:code,amount:Math.round(amount*100),include_fees:false});
   const tracker=trackerResponse?.data?.tracker?.token;if(!tracker)throw new Error('SafePay did not return a payment tracker.');
   const tokenResponse=await safepayRequest<any>(config,'/client/passport/v1/token',{});const tbt=tokenResponse?.data;
   if(typeof tbt!=='string'||!tbt)throw new Error('SafePay did not return a checkout authorization token.');

@@ -28,7 +28,7 @@ export type PaymentStatus = 'PENDING' | 'PAID' | 'EXPIRED' | 'FAILED' | 'REFUNDE
 
 export type AppointmentStatus = 'SCHEDULED' | 'RESCHEDULED' | 'CANCELLED';
 
-export type IntegrationProvider = 'TWILIO' | 'SAFEPAY' | 'GOOGLE_CALENDAR' | 'TELEGRAM';
+export type IntegrationProvider = 'TWILIO' | 'WHATSAPP_CLOUD' | 'SAFEPAY' | 'GOOGLE_CALENDAR' | 'TELEGRAM';
 
 export type IntegrationStatus = 'DISCONNECTED' | 'CONNECTED' | 'ERROR';
 

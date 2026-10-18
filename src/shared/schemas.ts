@@ -293,7 +293,7 @@ export type AppointmentUpdateInput = z.infer<typeof AppointmentUpdateSchema>;
 // =============================================================
 
 export const IntegrationSaveConfigSchema = z.object({
-  provider: z.enum(['TWILIO', 'SAFEPAY', 'GOOGLE_CALENDAR', 'TELEGRAM']),
+  provider: z.enum(['TWILIO', 'WHATSAPP_CLOUD', 'SAFEPAY', 'GOOGLE_CALENDAR', 'TELEGRAM']),
   credentials: z.record(z.string(), z.string()),
   config: z.record(z.string(), z.any()).optional(),
 });

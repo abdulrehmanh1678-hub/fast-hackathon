@@ -1,1 +1,1 @@
-﻿ALTER TYPE "IntegrationProvider" RENAME VALUE 'STRIPE' TO 'SAFEPAY';
+ALTER TYPE "IntegrationProvider" RENAME VALUE 'STRIPE' TO 'SAFEPAY';
